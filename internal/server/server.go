@@ -33,11 +33,16 @@ type Server struct {
 	mu            sync.Mutex
 	peers         map[string]*peer
 	history       map[string][]protocol.Snapshot
-	pending       map[string]chan protocol.Message
+	pending       map[string]pendingRequest
 	terminals     map[string]*terminal
 	analysisSlots chan struct{}
 	transferSlots chan struct{}
 }
+type pendingRequest struct {
+	host   string
+	result chan protocol.Message
+}
+
 type peer struct {
 	ws *websocket.Conn
 	mu sync.Mutex
@@ -50,7 +55,7 @@ func (p *peer) Send(m protocol.Message) error {
 	return p.ws.WriteJSON(m)
 }
 func New(s *Store, r *redis.Client, c Config) *Server {
-	return &Server{Store: s, Redis: r, Config: c, peers: map[string]*peer{}, history: map[string][]protocol.Snapshot{}, pending: map[string]chan protocol.Message{}, terminals: map[string]*terminal{}, analysisSlots: make(chan struct{}, 2), transferSlots: make(chan struct{}, 2)}
+	return &Server{Store: s, Redis: r, Config: c, peers: map[string]*peer{}, history: map[string][]protocol.Snapshot{}, pending: map[string]pendingRequest{}, terminals: map[string]*terminal{}, analysisSlots: make(chan struct{}, 2), transferSlots: make(chan struct{}, 2)}
 }
 func reply(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -109,6 +114,13 @@ func (s *Server) Handler(assets fs.FS) http.Handler {
 	api.HandleFunc("POST /api/logout", func(w http.ResponseWriter, r *http.Request) {
 		c, _ := r.Cookie("sideria")
 		s.Store.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE token_hash=$1`, protocol.Hash(c.Value))
+		s.mu.Lock()
+		for _, t := range s.terminals {
+			if t.sessionHash == protocol.Hash(c.Value) {
+				t.browser.Close()
+			}
+		}
+		s.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{Name: "sideria", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: !s.Config.Dev})
 		reply(w, 200, map[string]bool{"ok": true})
 	})
@@ -311,7 +323,7 @@ func (s *Server) request(ctx context.Context, host, action string, params json.R
 		s.mu.Unlock()
 		return protocol.Message{}, errors.New("query capacity reached")
 	}
-	s.pending[id] = ch
+	s.pending[id] = pendingRequest{host: host, result: ch}
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
 	if err := s.Store.Audit(ctx, "tool", host, action, id, "requested"); err != nil {

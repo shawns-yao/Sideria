@@ -103,13 +103,24 @@ test.describe("real UI / center / Agent", () => {
     page,
   }) => {
     page.on("dialog", (d) => d.accept());
+    let terminalOutput = "";
+    page.on("websocket", (ws) =>
+      ws.on("framereceived", (frame) => {
+        const message = JSON.parse(String(frame.payload));
+        if (message.data?.bytes)
+          terminalOutput += Buffer.from(message.data.bytes, "base64").toString(
+            "utf8",
+          );
+      }),
+    );
     await page.getByRole("button", { name: "终端", exact: true }).click();
     await expect(page.locator(".terminal-identity")).toContainText("已连接");
     await page.locator(".xterm-helper-textarea").fill("");
     await page
       .locator(".xterm-helper-textarea")
-      .pressSequentially("printf 'UI_PTY_EVIDENCE\\n'");
+      .pressSequentially("printf '%s%s\\n' UI_PTY_ EVIDENCE");
     await page.locator(".xterm-helper-textarea").press("Enter");
+    await expect.poll(() => terminalOutput).toContain("UI_PTY_EVIDENCE");
     await expect(page.locator(".xterm-screen")).toBeVisible();
     await page
       .getByRole("button", { name: "E2E Beta", exact: true })

@@ -40,6 +40,7 @@ type Message struct {
 func Raw(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 
 type Snapshot struct {
+	IntervalSeconds float64   `json:"interval_seconds,omitempty"`
 	SampledAt       time.Time `json:"sampled_at"`
 	ReceivedAt      time.Time `json:"received_at"`
 	CPU             *float64  `json:"cpu"`

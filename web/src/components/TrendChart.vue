@@ -6,6 +6,7 @@ const props = defineProps<{
   secondary?: Point[];
   unit?: string;
   max?: number;
+  gapMs?: number;
 }>();
 const maximum = computed(
   () =>
@@ -16,9 +17,11 @@ const maximum = computed(
       ...(props.secondary ?? []).map((p) => p.value ?? 0),
     ),
 );
-const first = computed(() => linePath(props.series, 440, 90, maximum.value));
+const first = computed(() =>
+  linePath(props.series, 440, 90, maximum.value, props.gapMs),
+);
 const second = computed(() =>
-  linePath(props.secondary ?? [], 440, 90, maximum.value),
+  linePath(props.secondary ?? [], 440, 90, maximum.value, props.gapMs),
 );
 </script>
 <template>

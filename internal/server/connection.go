@@ -76,7 +76,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(m.Data, &snap) != nil {
 				return
 			}
-			if len(snap.Disks) > 64 || len(snap.Networks) > 64 || len(snap.Errors) > 64 || len(snap.OS) > 256 || len(snap.Hostname) > 256 || (snap.CPU != nil && (*snap.CPU < 0 || *snap.CPU > 100)) || snap.MemoryAvailable > snap.MemoryTotal {
+			if (snap.IntervalSeconds != 0 && (snap.IntervalSeconds < 1 || snap.IntervalSeconds > 60)) || len(snap.Disks) > 64 || len(snap.Networks) > 64 || len(snap.Errors) > 64 || len(snap.OS) > 256 || len(snap.Hostname) > 256 || (snap.CPU != nil && (*snap.CPU < 0 || *snap.CPU > 100)) || snap.MemoryAvailable > snap.MemoryTotal {
 				return
 			}
 			snap.ReceivedAt = time.Now().UTC()
@@ -102,15 +102,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case "result":
-			s.mu.Lock()
-			ch := s.pending[m.ID]
-			s.mu.Unlock()
-			if ch != nil {
-				select {
-				case ch <- m:
-				default:
-				}
-			}
+			s.deliverResult(id, m)
 		case "task_result":
 			if s.Store.UpdateTask(r.Context(), id, m) == nil {
 				if m.State == "succeeded" || m.State == "failed" {
@@ -198,5 +190,20 @@ func (s *Server) Run(ctx context.Context) {
 				p.Send(t.Message())
 			}
 		}
+	}
+}
+
+func (s *Server) deliverResult(host string, m protocol.Message) bool {
+	s.mu.Lock()
+	pending := s.pending[m.ID]
+	s.mu.Unlock()
+	if pending.host != host || pending.result == nil {
+		return false
+	}
+	select {
+	case pending.result <- m:
+		return true
+	default:
+		return false
 	}
 }

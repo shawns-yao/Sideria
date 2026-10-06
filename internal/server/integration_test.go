@@ -246,9 +246,9 @@ func TestIsolatedWorkflow(t *testing.T) {
 		defer ws.Close()
 		ws.SetReadDeadline(time.Now().Add(5 * time.Second))
 		ws.WriteJSON(protocol.Message{Type: "terminal_resize", Data: protocol.Raw(map[string]int{"cols": 100, "rows": 30})})
-		ws.WriteJSON(protocol.Message{Type: "terminal_input", Data: protocol.Raw(map[string]string{"bytes": base64.StdEncoding.EncodeToString([]byte("printf 'PTY_PROBE_OK\\n'\n"))})})
+		ws.WriteJSON(protocol.Message{Type: "terminal_input", Data: protocol.Raw(map[string]string{"bytes": base64.StdEncoding.EncodeToString([]byte("printf '%s%s\\n' PTY_EXEC_ CONFIRMED\n"))})})
 		var output string
-		for !strings.Contains(output, "PTY_PROBE_OK") {
+		for !strings.Contains(output, "PTY_EXEC_CONFIRMED") {
 			var m protocol.Message
 			if e = ws.ReadJSON(&m); e != nil {
 				t.Fatal(e, output)

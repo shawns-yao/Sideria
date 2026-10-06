@@ -167,6 +167,7 @@ func (a *Agent) session(ctx context.Context) {
 		defer tick.Stop()
 		for {
 			snap := sampler.Sample(sessionCtx)
+			snap.IntervalSeconds = a.Config.Interval.Seconds()
 			if a.send(protocol.Message{Type: "snapshot", Data: protocol.Raw(snap)}) != nil {
 				return
 			}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 export const snapshotSchema = z.object({
   sampled_at: z.string(),
+  interval_seconds: z.number().min(1).max(60).optional(),
   received_at: z.string(),
   cpu: z.number().min(0).max(100).nullable(),
   cores: z.number(),
@@ -99,16 +100,23 @@ export function stateLabel(s: string): string {
 }
 export function stale(h: Host, now = Date.now()): boolean {
   return (
-    !h.online || !h.snapshot || now - Date.parse(h.snapshot.sampled_at) > 20000
+    !h.online ||
+    !h.snapshot ||
+    now - Date.parse(h.snapshot.sampled_at) >
+      Math.max(20000, samplingGap(h.snapshot))
   );
 }
+export function samplingGap(s?: Snapshot | null): number {
+  return (s?.interval_seconds ?? 5) * 3000;
+}
 export type Point = { at: number; value: number | null };
-// A missing value or a >15s sampling gap starts a new segment; no synthetic interpolation.
+// Missing values and gaps longer than three configured intervals start a new segment.
 export function linePath(
   points: Point[],
   width: number,
   height: number,
   maximum?: number,
+  gapMS = 15000,
 ): string {
   if (points.length < 2) return "";
   const first = points[0]!.at,
@@ -124,7 +132,7 @@ export function linePath(
         previous = p.at;
         return "";
       }
-      const command = pen && p.at - previous <= 15000 ? "L" : "M";
+      const command = pen && p.at - previous <= gapMS ? "L" : "M";
       pen = true;
       previous = p.at;
       return `${command}${(((p.at - first) / span) * width).toFixed(1)},${(height - (p.value / max) * height).toFixed(1)}`;

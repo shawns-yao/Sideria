@@ -9,9 +9,10 @@ import (
 )
 
 type terminal struct {
-	host    string
-	browser *websocket.Conn
-	mu      sync.Mutex
+	host        string
+	sessionHash string
+	browser     *websocket.Conn
+	mu          sync.Mutex
 }
 
 func (t *terminal) send(m protocol.Message) {
@@ -48,7 +49,8 @@ func (s *Server) openTerminal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	t := &terminal{host: host, browser: ws}
+	cookie, _ := r.Cookie("sideria")
+	t := &terminal{host: host, browser: ws, sessionHash: protocol.Hash(cookie.Value)}
 	s.mu.Lock()
 	s.terminals[id] = t
 	s.mu.Unlock()

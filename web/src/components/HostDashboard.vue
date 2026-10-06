@@ -9,7 +9,14 @@ import {
   ArrowUp,
   Radio,
 } from "@lucide/vue";
-import { bytes, memory, percent, time, type Host } from "../domain/model";
+import {
+  bytes,
+  memory,
+  percent,
+  time,
+  samplingGap,
+  type Host,
+} from "../domain/model";
 import TrendChart from "./TrendChart.vue";
 const props = defineProps<{ host: Host; demo: boolean }>();
 const mount = ref(""),
@@ -91,7 +98,11 @@ const diskPercent = computed(() =>
         </div>
         <div class="cpu-trend">
           <p class="eyebrow">实际短窗口</p>
-          <TrendChart :series="cpuSeries" :max="100" />
+          <TrendChart
+            :gap-ms="samplingGap(snapshot)"
+            :series="cpuSeries"
+            :max="100"
+          />
           <dl class="load-values">
             <div
               v-for="(label, i) in ['1 min', '5 min', '15 min']"
@@ -141,7 +152,11 @@ const diskPercent = computed(() =>
           }}</span
         >
       </div>
-      <TrendChart :series="memSeries" :max="100" />
+      <TrendChart
+        :gap-ms="samplingGap(snapshot)"
+        :series="memSeries"
+        :max="100"
+      />
     </section>
     <section class="instrument disk">
       <div class="instrument-title">
@@ -214,7 +229,12 @@ const diskPercent = computed(() =>
           ><strong>{{ bytes(net?.tx) }}<small>/s</small></strong>
         </div>
       </div>
-      <TrendChart :series="rx" :secondary="tx" unit="bytes" />
+      <TrendChart
+        :gap-ms="samplingGap(snapshot)"
+        :series="rx"
+        :secondary="tx"
+        unit="bytes"
+      />
       <p class="muted">单网卡统计，不累加虚拟接口 · 实线接收 / 虚线发送</p>
     </section>
     <section class="instrument system">

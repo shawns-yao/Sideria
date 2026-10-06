@@ -14,6 +14,7 @@ onMounted(() => {
     fontSize: 13,
     fontFamily: "monospace",
     scrollback: 2000,
+    screenReaderMode: true,
     convertEol: false,
   });
   const fit = new FitAddon();
