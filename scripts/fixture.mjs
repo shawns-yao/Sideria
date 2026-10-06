@@ -37,6 +37,8 @@ if (process.env.SIDERIA_TEST_DOCKER_SOCKET) dockerID = execFileSync('docker', ['
 await mkdir(join(root, '.run'), { recursive: true })
 await writeFile(join(root, '.run/e2e.json'), JSON.stringify({ base, token, nodes, dockerID, serverPID: server.pid, serverEnv }), { mode: 0o600 })
 console.log('Isolated Sideria E2E fixture ready on ' + base)
+// Signal listeners alone do not keep Node alive after every child exits.
+const keepAlive = setInterval(() => {}, 1000)
 let stopping = false
-async function stop() { if (stopping) return; stopping = true; for (const child of children) child.kill('SIGTERM'); await Promise.all(children.map(c => c.exitCode !== null || c.signalCode !== null ? null : new Promise(resolve => { c.once('exit', resolve); setTimeout(() => { c.kill('SIGKILL'); resolve() }, 5000) }))); if (dockerID) { try { execFileSync('docker', ['rm', '-f', dockerID], { stdio: 'ignore' }) } catch {} } await rm(temp, { recursive: true, force: true }); await rm(join(root, '.run/e2e.json'), { force: true }); process.exit(0) }
+async function stop() { if (stopping) return; stopping = true; clearInterval(keepAlive); for (const child of children) child.kill('SIGTERM'); await Promise.all(children.map(c => c.exitCode !== null || c.signalCode !== null ? null : new Promise(resolve => { c.once('exit', resolve); setTimeout(() => { c.kill('SIGKILL'); resolve() }, 5000) }))); if (dockerID) { try { execFileSync('docker', ['rm', '-f', dockerID], { stdio: 'ignore' }) } catch {} } await rm(temp, { recursive: true, force: true }); await rm(join(root, '.run/e2e.json'), { force: true }); process.exit(0) }
 process.on('SIGTERM', stop); process.on('SIGINT', stop)
