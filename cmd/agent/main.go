@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -66,7 +67,17 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	a, err := agent.New(agent.Config{URL: os.Getenv("SIDERIA_SERVER_URL"), HostID: cred.HostID, Token: cred.Token, Root: os.Getenv("SIDERIA_FILE_ROOT"), JournalPath: filepath.Join(state, "journal.db"), DockerSocket: os.Getenv("SIDERIA_DOCKER_SOCKET"), Terminal: os.Getenv("SIDERIA_ALLOW_TERMINAL") == "1", Dev: os.Getenv("SIDERIA_DEV") == "1", Interval: interval})
+	limits := []int64{1 << 20, 32 << 20, 2}
+	for i, key := range []string{"SIDERIA_TRANSFER_BYTES_PER_SECOND", "SIDERIA_TRANSFER_MAX_BYTES", "SIDERIA_TRANSFER_CONCURRENCY"} {
+		if value := os.Getenv(key); value != "" {
+			limits[i], err = strconv.ParseInt(value, 10, 64)
+			if err != nil || limits[i] <= 0 {
+				slog.Error("invalid transfer limit", "setting", key)
+				os.Exit(1)
+			}
+		}
+	}
+	a, err := agent.New(agent.Config{URL: os.Getenv("SIDERIA_SERVER_URL"), HostID: cred.HostID, Token: cred.Token, Root: os.Getenv("SIDERIA_FILE_ROOT"), JournalPath: filepath.Join(state, "journal.db"), DockerSocket: os.Getenv("SIDERIA_DOCKER_SOCKET"), Terminal: os.Getenv("SIDERIA_ALLOW_TERMINAL") == "1", Dev: os.Getenv("SIDERIA_DEV") == "1", Interval: interval, TransferBytesPerSecond: limits[0], TransferMaxBytes: limits[1], TransferConcurrency: int(limits[2])})
 	if err != nil {
 		slog.Error("agent initialization failed", "error", err)
 		os.Exit(1)

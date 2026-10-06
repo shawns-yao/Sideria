@@ -137,8 +137,14 @@ func (s *Store) UpdateTask(ctx context.Context, host string, m protocol.Message)
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// Match identity replacement's host-before-task lock order. A late result
+	// from a revoked generation must not resolve a fenced attempt.
+	var generation int
+	if err = tx.QueryRow(ctx, `SELECT identity_generation FROM hosts WHERE id=$1 AND NOT revoked FOR SHARE`, host).Scan(&generation); err != nil {
+		return err
+	}
 	var b []byte
-	err = tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id=$1 AND host_id=$2 FOR UPDATE`, m.TaskID, host).Scan(&b)
+	err = tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id=$1 AND host_id=$2 AND identity_generation=$3 FOR UPDATE`, m.TaskID, host, generation).Scan(&b)
 	if err != nil {
 		return err
 	}

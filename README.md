@@ -40,6 +40,10 @@ SIDERIA_E2E_URL=http://127.0.0.1:18080 npm run test:e2e
 
 UI 独立预览：`npm --prefix web run dev`，打开 `http://127.0.0.1:5173/?demo=1`。演示无业务 API 请求，不模拟 AI 或终端成功。
 
+## 备份恢复与容量验证
+
+[操作手册](docs/operations.md)提供 PostgreSQL custom archive、恢复到新空库的身份/任务隔离流程，以及 8 个本地 Agent 的有界混合负载测试。恢复验证和负载回归已加入 CI；不等同于生产容量或真实主机验收。逐 Agent 传输带宽、大小和并发见环境模板。
+
 ## 接入自有主机（需用户自行授权与配置）
 
 1. 按 [中心环境模板](deploy/server.env.example)注入数据库、Redis、管理员令牌及 TLS；管理员令牌至少 32 字符，不写入 Git。

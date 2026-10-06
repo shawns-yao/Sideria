@@ -39,6 +39,7 @@ export const snapshotSchema = z.object({
   errors: z.array(z.string()).nullable(),
 });
 export const hostSchema = z.object({
+  revoked: z.boolean().optional(),
   id: z.string(),
   name: z.string(),
   online: z.boolean(),

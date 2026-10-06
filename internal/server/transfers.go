@@ -103,6 +103,12 @@ func (s *Server) agentTransfer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "transfer authorization denied")
 		return
 	}
+	var currentIdentity bool
+	err = s.Store.Pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM tasks t JOIN hosts h ON h.id=t.host_id WHERE t.id=$1 AND t.identity_generation=h.identity_generation AND NOT h.revoked AND t.state IN ('pending','running'))`, t.ID).Scan(&currentIdentity)
+	if err != nil || !currentIdentity {
+		fail(w, 403, "transfer attempt is no longer authorized")
+		return
+	}
 	if t.Action == "file.upload" && r.Method == "GET" {
 		f, err := os.Open(s.transferPath(t.ID))
 		if err != nil {
@@ -157,6 +163,7 @@ func (s *Server) beginTransfer(w http.ResponseWriter) bool {
 	select {
 	case s.transferSlots <- struct{}{}:
 	default:
+		w.Header().Set("Retry-After", "1")
 		fail(w, 429, "transfer concurrency limit reached")
 		return false
 	}

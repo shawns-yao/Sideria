@@ -311,9 +311,25 @@ func TestIsolatedWorkflow(t *testing.T) {
 		if _, err = store.HostToken(ctx, n.token); err == nil {
 			t.Fatal("replaced credential valid")
 		}
+		// New credentials cannot reuse an old generation's transfer authorization,
+		// even if the client knows the old Task and Attempt IDs.
+		req, _ := http.NewRequest("PUT", httpServer.URL+"/agent/transfer/"+old.ID, strings.NewReader("forged replacement"))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Attempt-ID", old.AttemptID)
+		res, transferErr := http.DefaultClient.Do(req)
+		if transferErr != nil {
+			t.Fatal(transferErr)
+		}
+		res.Body.Close()
+		if res.StatusCode != 403 {
+			t.Fatal("old generation transfer accepted", res.StatusCode)
+		}
 		old, _ = store.Task(ctx, old.ID)
 		if old.State != "uncertain" {
 			t.Fatal("old task falsely resolved", old.State)
+		}
+		if err = store.UpdateTask(ctx, id, protocol.Message{TaskID: old.ID, AttemptID: old.AttemptID, State: "succeeded"}); err == nil {
+			t.Fatal("late result resolved an old-generation attempt")
 		}
 		active, err := store.Tasks(ctx, n.id, true)
 		if err != nil || len(active) != 0 {
@@ -343,6 +359,18 @@ func TestIsolatedWorkflow(t *testing.T) {
 		wait("revoked connection closed", func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.peers[n.id] == nil })
 		if _, e := store.HostToken(ctx, n.token); e == nil {
 			t.Fatal("revoked credential still accepted")
+		}
+		status, b := call("GET", "/api/hosts?include_revoked=1", nil, "")
+		var review []protocol.Host
+		json.Unmarshal(b, &review)
+		found := false
+		for _, h := range review {
+			if h.ID == n.id && h.Revoked && !h.Online {
+				found = true
+			}
+		}
+		if status != 200 || !found {
+			t.Fatal("revoked identity unavailable for recovery review")
 		}
 	})
 }

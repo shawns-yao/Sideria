@@ -9,6 +9,7 @@
 | go-redis/v9 | 9.23.0 | Redis 原子限流及 owner 租约 |
 | gopsutil/v4 | 4.26.9 | Linux CPU、内存、磁盘、网卡与系统采集 |
 | creack/pty | 1.1.24 | PTY 创建和窗口调整 |
+| golang.org/x/time/rate | 0.16.0 | 每 Agent 共享、有界 burst 的传输 token bucket |
 | bbolt | 1.5.0 | Agent 本地 fsync 执行 journal |
 | Vue | 3.5.43 | 组件与响应式 UI（MIT） |
 | @lucide/vue | 1.52.0 | 一致线性图标（ISC） |

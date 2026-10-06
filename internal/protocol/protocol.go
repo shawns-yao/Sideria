@@ -73,6 +73,7 @@ type Network struct {
 	TX       *float64 `json:"tx"`
 }
 type Host struct {
+	Revoked      bool              `json:"revoked"`
 	ID           string            `json:"id"`
 	Name         string            `json:"name"`
 	Online       bool              `json:"online"`

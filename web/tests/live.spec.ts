@@ -132,4 +132,35 @@ test.describe("real UI / center / Agent", () => {
     await expect(page.locator(".ai-panel")).toContainText("真实 AI 验收未执行");
     await expect(page.getByRole("button", { name: "开始分析" })).toBeDisabled();
   });
+  test("revoked hosts remain reviewable in settings before explicit re-enrollment", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByLabel("新主机名称").fill("Recovery review");
+    await page.getByRole("button", { name: "创建接入令牌" }).click();
+    await page.getByRole("button", { name: "隐藏令牌" }).click();
+    const row = page.locator(".settings-host").filter({
+      has: page.getByRole("heading", {
+        name: "Recovery review",
+        exact: true,
+      }),
+    });
+    page.once("dialog", (dialog) => dialog.accept());
+    await row.getByRole("button", { name: "撤销身份" }).click();
+    await expect(row).toContainText("身份已撤销");
+    expect(
+      (await (await page.request.get(fixture.base + "/api/hosts")).json()).some(
+        (h: any) => h.name === "Recovery review",
+      ),
+    ).toBe(false);
+    page.once("dialog", (dialog) => dialog.accept());
+    await row.getByRole("button", { name: "重新绑定" }).click();
+    await expect(page.locator(".secret-display")).toBeVisible();
+    await page.getByRole("button", { name: "隐藏令牌" }).click();
+    await expect(row).not.toContainText("身份已撤销");
+    page.once("dialog", (dialog) => dialog.accept());
+    await row.getByRole("button", { name: "撤销身份" }).click();
+    await expect(row).toContainText("身份已撤销");
+    await row.screenshot({ path: "test-results/recovery-settings.png" });
+  });
 });

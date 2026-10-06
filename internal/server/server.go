@@ -279,7 +279,7 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]bool{"ok": true})
 }
 func (s *Server) hosts(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.Store.Pool.Query(r.Context(), `SELECT id,name,last_seen,capabilities,snapshot FROM hosts WHERE NOT revoked ORDER BY name,id LIMIT 200`)
+	rows, err := s.Store.Pool.Query(r.Context(), `SELECT id,name,last_seen,capabilities,snapshot,revoked FROM hosts WHERE NOT revoked OR $1 ORDER BY name,id LIMIT 200`, r.URL.Query().Get("include_revoked") == "1")
 	if err != nil {
 		fail(w, 503, "database unavailable")
 		return
@@ -289,7 +289,7 @@ func (s *Server) hosts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var h protocol.Host
 		var caps, snap []byte
-		if err = rows.Scan(&h.ID, &h.Name, &h.LastSeen, &caps, &snap); err != nil {
+		if err = rows.Scan(&h.ID, &h.Name, &h.LastSeen, &caps, &snap, &h.Revoked); err != nil {
 			fail(w, 500, "host read failed")
 			return
 		}

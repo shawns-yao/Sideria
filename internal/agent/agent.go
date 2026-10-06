@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/gorilla/websocket"
 	"github.com/shawns-yao/Sideria/internal/protocol"
+	"golang.org/x/time/rate"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -23,18 +24,24 @@ type Config struct {
 	Terminal                                            bool
 	Dev                                                 bool
 	Interval                                            time.Duration
+	TransferBytesPerSecond                              int64
+	TransferMaxBytes                                    int64
+	TransferConcurrency                                 int
 }
 type Agent struct {
-	Config    Config
-	root      *os.Root
-	journal   *Journal
-	mu        sync.Mutex
-	conn      *websocket.Conn
-	write     sync.Mutex
-	resources map[string]bool
-	slots     chan struct{}
-	terminals map[string]*ptySession
-	workers   sync.WaitGroup
+	Config        Config
+	root          *os.Root
+	journal       *Journal
+	mu            sync.Mutex
+	conn          *websocket.Conn
+	write         sync.Mutex
+	resources     map[string]bool
+	slots         chan struct{}
+	taskSlots     chan struct{}
+	terminals     map[string]*ptySession
+	workers       sync.WaitGroup
+	transferSlots chan struct{}
+	transferRate  *rate.Limiter
 }
 
 func New(c Config) (*Agent, error) {
@@ -43,6 +50,18 @@ func New(c Config) (*Agent, error) {
 	}
 	if c.Interval < time.Second {
 		c.Interval = 5 * time.Second
+	}
+	if c.TransferBytesPerSecond == 0 {
+		c.TransferBytesPerSecond = 1 << 20
+	}
+	if c.TransferMaxBytes == 0 {
+		c.TransferMaxBytes = maxTransfer
+	}
+	if c.TransferConcurrency == 0 {
+		c.TransferConcurrency = 2
+	}
+	if c.TransferBytesPerSecond < 64<<10 || c.TransferBytesPerSecond > 1<<30 || c.TransferMaxBytes < 1 || c.TransferMaxBytes > maxTransfer || c.TransferConcurrency < 1 || c.TransferConcurrency > 4 {
+		return nil, errors.New("transfer limits outside supported range")
 	}
 	root, e := os.OpenRoot(c.Root)
 	if e != nil {
@@ -53,7 +72,7 @@ func New(c Config) (*Agent, error) {
 		root.Close()
 		return nil, e
 	}
-	return &Agent{Config: c, root: root, journal: j, resources: map[string]bool{}, slots: make(chan struct{}, 8), terminals: map[string]*ptySession{}}, nil
+	return &Agent{Config: c, root: root, journal: j, resources: map[string]bool{}, slots: make(chan struct{}, 8), taskSlots: make(chan struct{}, 4), terminals: map[string]*ptySession{}, transferSlots: make(chan struct{}, c.TransferConcurrency), transferRate: rate.NewLimiter(rate.Limit(c.TransferBytesPerSecond), 32<<10)}, nil
 }
 func (a *Agent) Close() {
 	a.mu.Lock()
@@ -203,12 +222,19 @@ func (a *Agent) session(ctx context.Context) {
 		}
 		switch m.Type {
 		case "query", "task":
+			slots := a.slots
+			if m.Type == "task" {
+				slots = a.taskSlots
+			}
 			select {
-			case a.slots <- struct{}{}:
+			case slots <- struct{}{}:
 				a.workers.Add(1)
-				go func() { defer a.workers.Done(); defer func() { <-a.slots }(); a.handle(ctx, m) }()
+				go func() { defer a.workers.Done(); defer func() { <-slots }(); a.handle(ctx, m) }()
 			default:
-				a.send(protocol.Message{Type: "result", ID: m.ID, State: "failed", Error: "agent query capacity reached"})
+				// Pending tasks stay durable at the center and are redelivered with the same Attempt.
+				if m.Type == "query" {
+					a.send(protocol.Message{Type: "result", ID: m.ID, State: "failed", Error: "agent query capacity reached"})
+				}
 			}
 		case "ack":
 		case "terminal_open", "terminal_input", "terminal_resize", "terminal_close":

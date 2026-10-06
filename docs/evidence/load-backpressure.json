@@ -1,0 +1,80 @@
+{
+  "kind": "isolated-local-processes-not-real-servers",
+  "agents": 8,
+  "samples_per_second": 8,
+  "bytes_per_file": 262144,
+  "concurrency": 8,
+  "phases": {
+    "queries": {
+      "count": 200,
+      "p50_ms": 7.6488860000000045,
+      "p95_ms": 29.471525999999983,
+      "max_ms": 70.10838200000003,
+      "wall_ms": 286.180174
+    },
+    "downloads": {
+      "count": 64,
+      "p50_ms": 7306.728007000001,
+      "p95_ms": 12715.641768,
+      "max_ms": 13641.73992,
+      "acceptance": {
+        "count": 64,
+        "p50_ms": 6.7942090000000235,
+        "p95_ms": 14.830767999999978,
+        "max_ms": 30.035911999999996
+      },
+      "wall_ms": 13714.364474,
+      "succeeded": 64,
+      "failures": []
+    },
+    "uploads": {
+      "count": 32,
+      "p50_ms": 2000.5817910000005,
+      "p95_ms": 2296.4651539999995,
+      "max_ms": 2308.516875000001,
+      "wall_ms": 8335.466508999998,
+      "retryable_429": 17
+    },
+    "center_restart": {
+      "connected_ms": 1571.7872160000006,
+      "all_pending_completed_ms": 2109.0028719999973,
+      "same_attempts": 8
+    }
+  },
+  "before_restart": {
+    "active_queries": 0,
+    "agent_connections": 8,
+    "db_acquired": 0,
+    "db_connections": 10,
+    "goroutines": 30,
+    "heap_bytes": 4836512,
+    "limits": {
+      "history_per_host": 360,
+      "queries": 64,
+      "terminal_sessions": 8,
+      "transfer_bytes": 33554432
+    },
+    "terminal_sessions": 0,
+    "window_samples": 232
+  },
+  "after_restart": {
+    "active_queries": 0,
+    "agent_connections": 8,
+    "db_acquired": 0,
+    "db_connections": 10,
+    "goroutines": 32,
+    "heap_bytes": 2747952,
+    "limits": {
+      "history_per_host": 360,
+      "queries": 64,
+      "terminal_sessions": 8,
+      "transfer_bytes": 33554432
+    },
+    "terminal_sessions": 0,
+    "window_samples": 8
+  },
+  "memory": {
+    "center_rss_peak_bytes": 24330240,
+    "agents_rss_peak_bytes": 117448704
+  }
+}

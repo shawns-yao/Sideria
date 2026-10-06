@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/shawns-yao/Sideria/internal/protocol"
+	"golang.org/x/time/rate"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,36 +19,67 @@ import (
 const maxTransfer = 32 << 20
 
 func (a *Agent) transfer(ctx context.Context, m protocol.Message) (any, error) {
+	select {
+	case a.transferSlots <- struct{}{}:
+		defer func() { <-a.transferSlots }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	args, err := protocol.Validate(m.Action, m.Params)
 	if err != nil {
 		return nil, err
 	}
 	url := a.Config.URL + "/agent/transfer/" + m.TaskID
-	client := &http.Client{Timeout: 4 * time.Minute}
-	var req *http.Request
+	client := &http.Client{Timeout: 4 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("transfer redirects denied") }}
 	var file *os.File
-	if m.Action == "file.upload" {
-		req, err = http.NewRequestWithContext(ctx, "GET", url, nil)
-	} else {
+	var size int64
+	if m.Action == "file.download" {
 		file, err = a.root.OpenFile(args.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, err
 		}
 		defer file.Close()
 		st, e := file.Stat()
-		if e != nil || !st.Mode().IsRegular() || st.Size() > maxTransfer {
-			return nil, errors.New("download requires a regular file no larger than 32 MiB")
+		if e != nil || !st.Mode().IsRegular() || st.Size() > a.Config.TransferMaxBytes {
+			return nil, errors.New("download requires a regular file within the configured transfer limit")
 		}
-		req, err = http.NewRequestWithContext(ctx, "PUT", url, io.LimitReader(file, maxTransfer+1))
+		size = st.Size()
 	}
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+a.Config.Token)
-	req.Header.Set("X-Attempt-ID", m.AttemptID)
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	var res *http.Response
+	for attempt := 0; ; attempt++ {
+		var body io.Reader
+		method := "GET"
+		if file != nil {
+			method = "PUT"
+			// ReadAt avoids sharing a seek cursor with a transport still closing an old request.
+			body = &pacedReader{ctx: ctx, reader: io.NewSectionReader(file, 0, size), limiter: a.transferRate}
+		}
+		req, e := http.NewRequestWithContext(ctx, method, url, body)
+		if e != nil {
+			return nil, e
+		}
+		if file != nil {
+			req.ContentLength = size
+		}
+		req.Header.Set("Authorization", "Bearer "+a.Config.Token)
+		req.Header.Set("X-Attempt-ID", m.AttemptID)
+		res, err = client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if res.StatusCode != http.StatusTooManyRequests || attempt >= 30 {
+			break
+		}
+		res.Body.Close()
+		// 429 means the center rejected admission before reading or publishing bytes.
+		// Retry only this transport admission, never the task or filesystem side effect.
+		timer := time.NewTimer(time.Second + time.Duration(rand.IntN(250))*time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
@@ -63,7 +96,7 @@ func (a *Agent) transfer(ctx context.Context, m protocol.Message) (any, error) {
 	}
 	defer a.root.Remove(temp)
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(res.Body, maxTransfer+1))
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(&pacedReader{ctx: ctx, reader: res.Body, limiter: a.transferRate}, a.Config.TransferMaxBytes+1))
 	if err == nil {
 		err = f.Sync()
 	}
@@ -71,7 +104,7 @@ func (a *Agent) transfer(ctx context.Context, m protocol.Message) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if n > maxTransfer {
+	if n > a.Config.TransferMaxBytes {
 		return nil, errors.New("upload size exceeded")
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
@@ -91,4 +124,22 @@ func (a *Agent) transfer(ctx context.Context, m protocol.Message) (any, error) {
 		return nil, ErrUncertain
 	}
 	return map[string]any{"bytes": n, "sha256": digest, "path": args.Path}, nil
+}
+
+// One limiter is shared by every upload and download on this Agent. Burst is
+// bounded to 32 KiB, cancellation interrupts waiting, buffers stay bounded.
+type pacedReader struct {
+	ctx     context.Context
+	reader  io.Reader
+	limiter *rate.Limiter
+}
+
+func (p *pacedReader) Read(b []byte) (int, error) {
+	if len(b) > p.limiter.Burst() {
+		b = b[:p.limiter.Burst()]
+	}
+	if err := p.limiter.WaitN(p.ctx, len(b)); err != nil {
+		return 0, err
+	}
+	return p.reader.Read(b)
 }

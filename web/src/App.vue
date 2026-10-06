@@ -49,6 +49,7 @@ const signedIn = ref(demo),
   token = ref(""),
   error = ref(""),
   hosts = ref<Host[]>(demo ? demoHosts : []),
+  settingsHosts = ref<Host[]>(demo ? demoHosts : []),
   selected = ref(demo ? demoHosts[0]!.id : ""),
   page = ref("host"),
   tab = ref("概览"),
@@ -81,10 +82,16 @@ async function refresh() {
   try {
     const parsed = z
       .array(hostSchema)
-      .parse(await api(`/api/hosts?history=${encodeURIComponent(target)}`));
+      .parse(
+        await api(
+          `/api/hosts?history=${encodeURIComponent(target)}&include_revoked=${page.value === "settings" ? "1" : "0"}`,
+        ),
+      );
     if (disposed) return;
-    hosts.value = parsed;
-    if (!selected.value && parsed.length) selected.value = parsed[0]!.id;
+    settingsHosts.value = parsed;
+    hosts.value = parsed.filter((h) => !h.revoked);
+    if (!selected.value && hosts.value.length)
+      selected.value = hosts.value[0]!.id;
   } catch (e) {
     if (e instanceof APIError && e.status === 401) signedIn.value = false;
     else error.value = (e as Error).message;
@@ -137,6 +144,7 @@ function choose(id: string) {
 async function navigate(id: string) {
   page.value = id;
   mobileNav.value = false;
+  if (id === "settings") await refresh();
   if (id === "audit" && !demo) {
     try {
       audit.value = await api("/api/audit");
@@ -503,10 +511,13 @@ async function logout() {
             <code class="secret-display">{{ enrollment.enrollment_token }}</code
             ><button @click="enrollment = null">隐藏令牌</button>
           </div>
-          <article v-for="h in hosts" :key="h.id" class="settings-host">
+          <article v-for="h in settingsHosts" :key="h.id" class="settings-host">
             <div>
               <h3>{{ h.name }}</h3>
               <p class="mono muted">{{ h.id }}</p>
+              <p v-if="h.revoked" class="notice">
+                身份已撤销。核对 Agent journal 和目标状态后才可重新绑定。
+              </p>
               <p>
                 {{
                   Object.entries(h.capabilities)
@@ -517,7 +528,10 @@ async function logout() {
             </div>
             <button :disabled="demo" @click="reenroll(h.id, h.name)">
               重新绑定</button
-            ><button :disabled="demo" @click="revoke(h.id, h.name)">
+            ><button
+              :disabled="demo || h.revoked"
+              @click="revoke(h.id, h.name)"
+            >
               撤销身份
             </button>
           </article>

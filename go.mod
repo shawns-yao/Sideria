@@ -9,6 +9,7 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/shirou/gopsutil/v4 v4.26.9
 	go.etcd.io/bbolt v1.5.0
+	golang.org/x/time v0.16.0
 )
 
 require (
