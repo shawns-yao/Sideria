@@ -1,0 +1,22 @@
+[Unit]
+Description=Sideria Linux host agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sideria
+Group=sideria
+EnvironmentFile=/etc/sideria/agent.env
+ExecStart=/usr/local/bin/sideria-agent
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sideria /srv/sideria
+
+[Install]
+WantedBy=multi-user.target
