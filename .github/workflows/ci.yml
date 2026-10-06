@@ -1,0 +1,71 @@
+name: Sideria verification
+on:
+  push:
+    branches: [master, 'implement/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: sideria_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SIDERIA_TEST_DATABASE: postgres://postgres@127.0.0.1:5432/sideria_test?sslmode=disable
+      SIDERIA_TEST_REDIS: redis://127.0.0.1:6379/0
+      SIDERIA_TEST_DOCKER_SOCKET: /var/run/docker.sock
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make build check
+      - run: docker pull alpine:3.22
+      - run: make test
+      - name: Browser installation
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: UI and real Agent E2E
+        env:
+          SIDERIA_TEST_REDIS_CONTAINER: ${{ job.services.redis.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CHROMIUM_PATH="$(node --input-type=module -e 'import {chromium} from "./web/node_modules/playwright-core/index.mjs";console.log(chromium.executablePath())')"
+          node scripts/fixture.mjs > /tmp/sideria-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill -TERM "$fixture_pid" 2>/dev/null || true' EXIT
+          for i in {1..100}; do
+            if test -f .run/e2e.json; then break; fi
+            sleep 0.2
+          done
+          test -f .run/e2e.json
+          cd web
+          SIDERIA_E2E_URL=http://127.0.0.1:18080 npm run test:e2e
+          cd ..
+          node scripts/recovery.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            web/test-results
+            web/playwright-report
+            .run/recovery-results.json
+          retention-days: 7
